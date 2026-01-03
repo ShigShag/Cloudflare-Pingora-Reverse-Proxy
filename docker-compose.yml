@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  pingora-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pingora-proxy:latest
+    container_name: pingora-proxy
+    restart: unless-stopped
+
+    ports:
+      - "6188:6188"
+
+    volumes:
+      - ./config.yaml:/usr/src/pingora_proxy/config.yaml:ro
+      - ./certificate:/usr/src/pingora_proxy/certificate:ro
+
+    environment:
+      # Override these as needed
+      PROXY_HOST: "0.0.0.0"
+      PROXY_PORT: "6188"
+      CERT_DIR: "/usr/src/pingora_proxy/certificate"
+      CONFIG_PATH: "/usr/src/pingora_proxy/config.yaml"
+      RUST_LOG: "info"
+
+    networks:
+      - proxy-network
+
+    # Health check to ensure the proxy is running
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  proxy-network:
+    driver: bridge
