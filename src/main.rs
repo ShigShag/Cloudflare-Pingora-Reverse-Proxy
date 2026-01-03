@@ -24,7 +24,8 @@ struct RawConfig {
 
 #[derive(Debug, Clone)]
 struct UpstreamConfig {
-    addr: String,
+    host: String,
+    port: u16,
     use_tls: bool,
     sni: String,
 }
@@ -72,38 +73,53 @@ impl AppConfig {
 
     fn parse_upstream(upstream_addr: &str) -> UpstreamConfig {
         // Try to parse URL to detect http:// or https://
-        let (use_tls, sni) = match Url::parse(upstream_addr) {
-            Ok(parsed) => {
+        let parsed_url =
+            if upstream_addr.starts_with("http://") || upstream_addr.starts_with("https://") {
+                Url::parse(upstream_addr).ok()
+            } else {
+                // If no scheme, add http:// temporarily for parsing
+                Url::parse(&format!("http://{}", upstream_addr)).ok()
+            };
+
+        let (use_tls, sni, host, port) = match parsed_url {
+            Some(parsed) => {
                 let tls = parsed.scheme() == "https";
                 let host = parsed.host_str().unwrap_or("").to_string();
+                let port = parsed.port().unwrap_or(if tls { 443 } else { 80 });
 
-                // For IPs, SNI should be empty to avoid DNS resolution issues
+                // For IPs, SNI should be empty to avoid TLS issues
                 let sni = if host.parse::<std::net::IpAddr>().is_ok() {
                     "".to_string()
                 } else {
-                    host
+                    host.clone()
                 };
-                (tls, sni)
+                (tls, sni, host, port)
             }
-            Err(err) => {
-                error!(
-                    "Failed to parse upstream URL '{}': {:?}",
-                    upstream_addr, err
-                );
+            None => {
+                error!("Failed to parse upstream URL '{}'", upstream_addr);
+                // Fallback: assume it's already in host:port format
                 let tls = upstream_addr.starts_with("https://");
-                (tls, "".to_string())
+                let clean = upstream_addr
+                    .strip_prefix("https://")
+                    .or_else(|| upstream_addr.strip_prefix("http://"))
+                    .unwrap_or(upstream_addr);
+
+                // Split host:port
+                let parts: Vec<&str> = clean.split(':').collect();
+                let host = parts.get(0).unwrap_or(&"localhost").to_string();
+                let port =
+                    parts
+                        .get(1)
+                        .and_then(|p| p.parse().ok())
+                        .unwrap_or(if tls { 443 } else { 80 });
+
+                (tls, "".to_string(), host, port)
             }
         };
 
-        // Remove http:// or https:// from the address
-        let clean_addr = upstream_addr
-            .strip_prefix("https://")
-            .or_else(|| upstream_addr.strip_prefix("http://"))
-            .unwrap_or(upstream_addr)
-            .to_string();
-
         UpstreamConfig {
-            addr: clean_addr,
+            host,
+            port,
             use_tls,
             sni,
         }
@@ -206,13 +222,16 @@ impl ProxyHttp for HostSwitchProxy {
 
         if let Some(config) = upstream_config {
             info!(
-                "Routing {} -> {} (TLS: {}, SNI: '{}')",
-                host, config.addr, config.use_tls, config.sni
+                "Routing {} -> {}:{} (TLS: {}, SNI: '{}')",
+                host, config.host, config.port, config.use_tls, config.sni
             );
 
             // Create peer with parsed config
-            let mut peer: Box<HttpPeer> =
-                Box::new(HttpPeer::new(config.addr, config.use_tls, config.sni));
+            let mut peer: Box<HttpPeer> = Box::new(HttpPeer::new(
+                (config.host.as_str(), config.port),
+                config.use_tls,
+                config.sni,
+            ));
 
             // Disable certificate verification for HTTPS upstreams
             if config.use_tls {
@@ -228,6 +247,39 @@ impl ProxyHttp for HostSwitchProxy {
                 format!("Host {} not configured", host),
             ))
         }
+    }
+
+    async fn upstream_request_filter(
+        &self,
+        session: &mut Session,
+        upstream_request: &mut RequestHeader,
+        _ctx: &mut Self::CTX,
+    ) -> Result<()> {
+        let ip_address = session
+            .client_addr()
+            .and_then(|a| a.as_inet().map(|inet| inet.ip()))
+            .map(|ip| ip.to_string())
+            .unwrap_or_else(|| "<unknown>".into());
+
+        // If header already exists, append (common proxy behavior),
+        // otherwise insert a fresh one
+        if let Some(existing) = upstream_request.headers.get("X-Forwarded-For") {
+            let mut new_val = existing.to_str().unwrap_or("").to_string();
+            if !new_val.is_empty() {
+                new_val.push_str(", ");
+            }
+            new_val.push_str(&ip_address);
+
+            if let Err(err) = upstream_request.insert_header("X-Forwarded-For", &new_val) {
+                log::error!("Failed to set X-Forwarded-For header: {:?}", err);
+            }
+        } else if let Err(err) = upstream_request.insert_header("X-Forwarded-For", &ip_address) {
+            log::error!("Failed to set X-Forwarded-For header: {:?}", err);
+        }
+
+        log::debug!("Set X-Forwarded-For: {}", ip_address);
+
+        Ok(())
     }
 
     async fn logging(
