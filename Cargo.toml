@@ -5,16 +5,18 @@ edition = "2021"
 
 [dependencies]
 # Core Pingora framework
-pingora = { version = "0.6.0", features = ["proxy"] }
-pingora-core = "0.6.0"
-pingora-http = "0.6.0"
-pingora-proxy = { version = "0.6.0", features = ["boringssl"] }
+pingora = { version = "0.7.0", features = ["proxy"] }
+pingora-core = "0.7.0"
+pingora-http = "0.7.0"
+pingora-proxy = { version = "0.7.0", features = ["boringssl"] }
 async-trait = "0.1"
 # For logging
 env_logger = "0.11"
 log = "0.4"
 # For configuration parsing
 serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.9"
+serde_yaml_ng = "0.10"
 tokio = "1.49.0"
 url = "2.5"
+# For rate limiting
+pingora-limits = "0.7.0"

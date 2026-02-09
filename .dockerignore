@@ -1,1 +1,7 @@
 target/
+.git/
+.gitignore
+.env
+.env.example
+*.md
+certificate/

@@ -47,13 +47,6 @@ RUN mkdir -p /usr/src/pingora_proxy/certificate
 # Copy binary from builder
 COPY --from=builder /usr/src/pingora_proxy/target/release/simple_pingora_proxy /usr/local/bin/simple_pingora_proxy
 
-# Copy configuration files
-COPY ./config.yaml /usr/src/pingora_proxy/config.yaml
-COPY ./certificate/ /usr/src/pingora_proxy/certificate/
-
-# Copy .env file (will be used by the application)
-COPY ./.env /usr/src/pingora_proxy/.env
-
 # Fix permissions
 RUN chown -R proxyuser:proxyuser /usr/src/pingora_proxy \
  && chmod -R 755 /usr/src/pingora_proxy
