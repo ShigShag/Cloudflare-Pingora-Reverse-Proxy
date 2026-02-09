@@ -1,5 +1,6 @@
 mod config;
 mod proxy;
+mod session_store;
 mod watcher;
 
 use config::{AppConfig, ProxyConfig, RawConfig};

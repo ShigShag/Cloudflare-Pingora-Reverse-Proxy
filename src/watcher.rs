@@ -10,6 +10,7 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
 use crate::config::{AppConfig, RawConfig};
+use crate::session_store::SESSION_STORE;
 
 pub struct ConfigWatcher {
     pub path: String,
@@ -29,6 +30,7 @@ impl BackgroundService for ConfigWatcher {
     {
         Box::pin(async move {
             let path = Path::new(&self.path);
+            let mut tick_counter: u32 = 0;
 
             loop {
                 // 1. Perform the check and reload logic
@@ -49,6 +51,29 @@ impl BackgroundService for ConfigWatcher {
                                     Ok(file) => match serde_yaml_ng::from_reader::<_, RawConfig>(file) {
                                         Ok(raw_config) => {
                                             let new_config = AppConfig::from_raw(raw_config);
+
+                                            // Clear session bindings for hosts whose config changed
+                                            {
+                                                let old_conf = self.config.read().unwrap_or_else(|e| e.into_inner());
+                                                for (hostname, new_upstream) in &new_config.hosts {
+                                                    let old_binding = old_conf
+                                                        .hosts
+                                                        .get(hostname)
+                                                        .and_then(|u| u.session_binding.as_ref());
+                                                    let new_binding = new_upstream.session_binding.as_ref();
+                                                    if old_binding != new_binding {
+                                                        info!("Session binding config changed for {}, clearing bindings", hostname);
+                                                        SESSION_STORE.clear_host(hostname);
+                                                    }
+                                                }
+                                                // Clear bindings for hosts that were removed entirely
+                                                for hostname in old_conf.hosts.keys() {
+                                                    if !new_config.hosts.contains_key(hostname) {
+                                                        SESSION_STORE.clear_host(hostname);
+                                                    }
+                                                }
+                                            }
+
                                             *self.config.write().unwrap_or_else(|e| {
                                                 warn!("Config lock poisoned, recovering");
                                                 e.into_inner()
@@ -68,7 +93,13 @@ impl BackgroundService for ConfigWatcher {
                     }
                 }
 
-                // 2. Wait for either the interval OR the shutdown signal
+                // 2. Periodic session store cleanup (every 60s = 12 ticks * 5s)
+                tick_counter += 1;
+                if tick_counter % 12 == 0 {
+                    SESSION_STORE.evict_expired();
+                }
+
+                // 3. Wait for either the interval OR the shutdown signal
                 tokio::select! {
                     _ = tokio::time::sleep(Duration::from_secs(5)) => {
                         // Continue loop

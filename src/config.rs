@@ -29,6 +29,26 @@ impl Default for RateLimitConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BindAttribute {
+    Ip,
+    Tls,
+    UserAgent,
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+pub struct SessionBindingConfig {
+    pub cookie_name: String,
+    #[serde(default = "default_ttl_seconds")]
+    pub ttl_seconds: u64,
+    pub bind_attributes: Vec<BindAttribute>,
+}
+
+fn default_ttl_seconds() -> u64 {
+    86400
+}
+
 // Flexible host entry that supports both simple string and extended format
 #[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
@@ -38,6 +58,8 @@ pub enum HostEntry {
         upstream: String,
         #[serde(default)]
         rate_limit: Option<RateLimitConfig>,
+        #[serde(default)]
+        session_binding: Option<SessionBindingConfig>,
     },
 }
 
@@ -55,6 +77,7 @@ pub struct UpstreamConfig {
     pub use_tls: bool,
     pub sni: String,
     pub rate_limit: Option<RateLimitConfig>,
+    pub session_binding: Option<SessionBindingConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -91,15 +114,17 @@ impl AppConfig {
             .hosts
             .into_iter()
             .map(|(hostname, entry)| {
-                let (upstream_addr, host_rate_limit) = match entry {
-                    HostEntry::Simple(addr) => (addr, None),
+                let (upstream_addr, host_rate_limit, host_session_binding) = match entry {
+                    HostEntry::Simple(addr) => (addr, None, None),
                     HostEntry::Extended {
                         upstream,
                         rate_limit,
-                    } => (upstream, rate_limit),
+                        session_binding,
+                    } => (upstream, rate_limit, session_binding),
                 };
                 let mut upstream_config = Self::parse_upstream(&upstream_addr);
                 upstream_config.rate_limit = host_rate_limit;
+                upstream_config.session_binding = host_session_binding;
                 (hostname, upstream_config)
             })
             .collect();
@@ -162,6 +187,7 @@ impl AppConfig {
             use_tls,
             sni,
             rate_limit: None,
+            session_binding: None,
         }
     }
 }

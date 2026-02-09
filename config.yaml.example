@@ -4,6 +4,23 @@ rate_limit:
   requests_per_second: 100
 
 hosts:
+  # Simple format: just upstream URL
   "example.local": "http://127.0.0.1:8081"
   "api.local": "https://192.168.99.23:8082"
   "test.com": "http://127.0.0.1:3000"
+
+  # Extended format with session binding
+  # Binds authenticated session cookies to client fingerprint attributes.
+  # Requests presenting a session cookie from a mismatched client get 403.
+  "dashboard.local":
+    upstream: "https://192.168.99.23:8082"
+    rate_limit:
+      enabled: true
+      requests_per_second: 50
+    session_binding:
+      cookie_name: "session_id"     # Name of the session cookie set by the upstream
+      ttl_seconds: 86400            # How long a binding is kept (default: 86400 = 24h)
+      bind_attributes:              # Which client attributes to bind:
+        - ip                        #   Client IP address
+        - tls                       #   TLS version + cipher suite
+        - user_agent                #   User-Agent header
