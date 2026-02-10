@@ -1,7 +1,9 @@
 use async_trait::async_trait;
+use bytes::Bytes;
 use log::{debug, error, info, warn};
 use pingora::prelude::*;
 use pingora_limits::rate::Rate;
+use pingora_proxy::FailToProxy;
 use std::sync::{Arc, LazyLock, RwLock};
 use std::time::Duration;
 
@@ -13,6 +15,15 @@ use crate::session_store::{
 
 // Global rate limiter with 1-second window
 static RATE_LIMITER: LazyLock<Rate> = LazyLock::new(|| Rate::new(Duration::from_secs(1)));
+
+// Custom 503 error page loaded from static/503.html at first use
+static ERROR_503_HTML: LazyLock<Bytes> = LazyLock::new(|| {
+    let dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "./static".to_string());
+    let path = format!("{}/503.html", dir);
+    std::fs::read(&path)
+        .map(Bytes::from)
+        .unwrap_or_else(|_| Bytes::from_static(b"<h1>503 Service Unavailable</h1>"))
+});
 
 /// Extract the hostname from a request, stripping the port if present.
 /// e.g. "test.com:6188" -> "test.com"
@@ -295,6 +306,58 @@ impl ProxyHttp for HostSwitchProxy {
         }
 
         Ok(())
+    }
+
+    async fn fail_to_proxy(
+        &self,
+        session: &mut Session,
+        e: &Error,
+        _ctx: &mut Self::CTX,
+    ) -> FailToProxy
+    where
+        Self::CTX: Send + Sync,
+    {
+        let code = match e.etype() {
+            HTTPStatus(code) => {
+                session.respond_error(*code).await.ok();
+                *code
+            }
+            ConnectRefused | ConnectTimedout | ConnectNoRoute | ConnectError => {
+                // Upstream unreachable — serve styled 503 page
+                let mut resp = ResponseHeader::build(503, Some(3)).unwrap();
+                resp.insert_header("Content-Type", "text/html; charset=utf-8")
+                    .ok();
+                resp.insert_header("Cache-Control", "no-store").ok();
+                session
+                    .write_response_header(Box::new(resp), false)
+                    .await
+                    .ok();
+                session
+                    .write_response_body(Some(ERROR_503_HTML.clone()), true)
+                    .await
+                    .ok();
+                503
+            }
+            _ => {
+                let code = match e.esource() {
+                    ErrorSource::Upstream => 502,
+                    ErrorSource::Downstream => match e.etype() {
+                        WriteError | ReadError | ConnectionClosed => 0,
+                        _ => 400,
+                    },
+                    ErrorSource::Internal | ErrorSource::Unset => 500,
+                };
+                if code > 0 {
+                    session.respond_error(code).await.ok();
+                }
+                code
+            }
+        };
+
+        FailToProxy {
+            error_code: code,
+            can_reuse_downstream: false,
+        }
     }
 
     async fn logging(

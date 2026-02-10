@@ -7,6 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libclang-dev \
     clang \
+    nodejs \
+    npm \
+ && npm install -g html-minifier-terser \
  && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
@@ -30,6 +33,19 @@ COPY ./src ./src
 # Rebuild the application with the actual source code
 RUN cargo build --release
 
+# Minify static HTML assets
+COPY ./static ./static-src
+RUN mkdir -p ./static \
+ && for f in ./static-src/*.html; do \
+      html-minifier-terser \
+        --collapse-whitespace \
+        --remove-comments \
+        --minify-css true \
+        --minify-js true \
+        "$f" -o "./static/$(basename "$f")"; \
+    done \
+ && cp -n ./static-src/* ./static/ 2>/dev/null || true
+
 # Runtime stage
 FROM debian:bookworm-slim
 
@@ -46,6 +62,9 @@ RUN mkdir -p /usr/src/pingora_proxy/certificate
 
 # Copy binary from builder
 COPY --from=builder /usr/src/pingora_proxy/target/release/simple_pingora_proxy /usr/local/bin/simple_pingora_proxy
+
+# Copy minified static assets from builder
+COPY --from=builder /usr/src/pingora_proxy/static /usr/src/pingora_proxy/static
 
 # Fix permissions
 RUN chown -R proxyuser:proxyuser /usr/src/pingora_proxy \
@@ -65,6 +84,7 @@ ENV PROXY_HOST=0.0.0.0
 ENV PROXY_PORT=6188
 ENV CERT_DIR=/usr/src/pingora_proxy/certificate
 ENV CONFIG_PATH=/usr/src/pingora_proxy/config.yaml
+ENV STATIC_DIR=/usr/src/pingora_proxy/static
 ENV RUST_LOG=info
 
 CMD ["/usr/local/bin/simple_pingora_proxy"]

@@ -17,3 +17,4 @@ target/
 
 # End of https://www.toptal.com/developers/gitignore/api/rust
 .env
+SECURITY_IDEAS.md

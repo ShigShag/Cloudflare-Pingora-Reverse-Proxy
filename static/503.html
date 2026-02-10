@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Connection Interrupted</title>
+
+    <style>
+        :root {
+            --bg: #0a0a0a;
+            --card-bg: #141414;
+            --text-main: #ffffff;
+            --text-muted: #8a8a8a;
+            --accent-red: #ff453a;
+            --accent-green: #32d74b;
+            --border: #262626;
+            --button-hover: #1f1f1f;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, "Inter", system-ui, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 24px;
+            line-height: 1.6;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* soft background glow */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(600px 300px at 50% -10%, rgba(255, 69, 58, 0.12), transparent 60%),
+                radial-gradient(600px 300px at 50% 110%, rgba(50, 215, 75, 0.06), transparent 60%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 520px;
+            width: 100%;
+            text-align: center;
+            background: linear-gradient(180deg, #141414, #0f0f0f);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 32px 28px;
+        }
+
+        /* Header */
+        header {
+            margin-bottom: 32px;
+        }
+
+        .error-tag {
+            font-family: ui-monospace, monospace;
+            color: var(--accent-red);
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            display: block;
+            opacity: 0.9;
+        }
+
+        h1 {
+            font-size: 1.9rem;
+            font-weight: 650;
+            letter-spacing: -0.025em;
+            margin-bottom: 12px;
+        }
+
+        p.description {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        /* Status Visualizer */
+        .status-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin: 28px 0 32px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            padding: 16px 18px;
+            border-radius: 12px;
+            transition: transform .15s ease, border-color .15s ease, background .15s ease;
+        }
+
+        .status-item:hover {
+            transform: translateY(-1px);
+            border-color: #2f2f2f;
+            background: #161616;
+        }
+
+        .status-info {
+            text-align: left;
+        }
+
+        .label {
+            font-weight: 500;
+            font-size: 0.95rem;
+            display: block;
+        }
+
+        .sub {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            min-width: 80px;
+            justify-content: flex-end;
+            color: var(--text-muted);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .dot.ok {
+            background: var(--accent-green);
+            box-shadow: 0 0 10px rgba(50, 215, 75, .6);
+        }
+
+        .dot.err {
+            background: var(--accent-red);
+            box-shadow: 0 0 10px rgba(255, 69, 58, .7);
+            animation: blink 1.5s infinite;
+        }
+
+        /* Actions */
+        .actions {
+            margin-top: 8px;
+        }
+
+        .btn-retry {
+            background: linear-gradient(180deg, #ffffff, #eaeaea);
+            color: #000;
+            border: none;
+            padding: 12px 34px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
+        }
+
+        .btn-retry:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+            opacity: 0.95;
+        }
+
+        .btn-retry:active {
+            transform: translateY(0);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, .25);
+        }
+
+        #timestamp {
+            font-family: ui-monospace, monospace;
+            font-size: 0.7rem;
+            margin-top: 18px;
+            color: #444;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        @keyframes blink {
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        @media (max-width: 400px) {
+            h1 {
+                font-size: 1.55rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <header>
+            <span class="error-tag">Status 520</span>
+            <h1>Connection Lost</h1>
+            <p class="description">
+                The origin server dropped the connection unexpectedly.
+                We're having trouble reaching the requested resource.
+            </p>
+        </header>
+
+        <div class="status-stack">
+            <div class="status-item">
+                <div class="status-info">
+                    <span class="label">Client</span>
+                    <span class="sub">Your Browser</span>
+                </div>
+                <div class="indicator">
+                    <div class="dot ok"></div>
+                    Active
+                </div>
+            </div>
+
+            <div class="status-item">
+                <div class="status-info">
+                    <span class="label">Network</span>
+                    <span class="sub">Reverse Proxy</span>
+                </div>
+                <div class="indicator">
+                    <div class="dot ok"></div>
+                    Online
+                </div>
+            </div>
+
+            <div class="status-item">
+                <div class="status-info">
+                    <span class="label" id="host-label">Server</span>
+                    <span class="sub">Origin Host</span>
+                </div>
+                <div class="indicator">
+                    <div class="dot err"></div>
+                    Offline
+                </div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn-retry" onclick="window.location.reload()">Try Again</button>
+            <div id="timestamp"></div>
+        </div>
+    </div>
+
+    <script>
+        const h = location.hostname || "Web Server";
+        document.getElementById('host-label').textContent = h;
+        document.title = `Error 520 | ${h}`;
+
+        const now = new Date();
+        document.getElementById('timestamp').textContent =
+            `Log: ${now.toISOString().replace('T', ' ').split('.')[0]} UTC`;
+    </script>
+
+</body>
+
+</html>

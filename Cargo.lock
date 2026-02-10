@@ -1946,6 +1946,7 @@ name = "simple_pingora_proxy"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bytes",
  "dashmap",
  "env_logger",
  "log",

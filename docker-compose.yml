@@ -13,6 +13,7 @@ services:
     volumes:
       - ./config.yaml:/usr/src/pingora_proxy/config.yaml:ro
       - ./certificate:/usr/src/pingora_proxy/certificate:ro
+      - ./static:/usr/src/pingora_proxy/static:ro
 
     environment:
       # Override these as needed

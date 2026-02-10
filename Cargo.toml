@@ -22,3 +22,5 @@ url = "2.5"
 pingora-limits = "0.7.0"
 # For concurrent session store
 dashmap = "6"
+# For response body bytes
+bytes = "1"
