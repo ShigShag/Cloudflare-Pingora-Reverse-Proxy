@@ -1,5 +1,6 @@
-use dashmap::DashMap;
 use log::debug;
+use moka::policy::Expiry;
+use moka::sync::Cache;
 use pingora::prelude::Session;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -10,62 +11,66 @@ use crate::config::{BindAttribute, SessionBindingConfig};
 
 pub static SESSION_STORE: LazyLock<SessionStore> = LazyLock::new(SessionStore::new);
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct SessionEntry {
     fingerprint: u64,
-    expires_at: Instant,
+    ttl: Duration,
+}
+
+/// Per-entry expiration: each entry expires after its own TTL.
+struct SessionExpiry;
+
+impl Expiry<(String, String), SessionEntry> for SessionExpiry {
+    fn expire_after_create(
+        &self,
+        _key: &(String, String),
+        value: &SessionEntry,
+        _created_at: Instant,
+    ) -> Option<Duration> {
+        Some(value.ttl)
+    }
 }
 
 #[derive(Debug)]
 pub struct SessionStore {
-    map: DashMap<(String, String), SessionEntry>,
+    cache: Cache<(String, String), SessionEntry>,
 }
 
 impl SessionStore {
     fn new() -> Self {
         Self {
-            map: DashMap::new(),
+            cache: Cache::builder()
+                .max_capacity(100_000)
+                .expire_after(SessionExpiry)
+                .build(),
         }
     }
 
     pub fn insert(&self, host: String, cookie_value: String, fingerprint: u64, ttl: Duration) {
-        self.map.insert(
+        self.cache.insert(
             (host, cookie_value),
-            SessionEntry {
-                fingerprint,
-                expires_at: Instant::now() + ttl,
-            },
+            SessionEntry { fingerprint, ttl },
         );
     }
 
     /// Returns the stored fingerprint if it exists and hasn't expired.
-    /// Lazily evicts expired entries.
     pub fn get_fingerprint(&self, host: &str, cookie_value: &str) -> Option<u64> {
         let key = (host.to_string(), cookie_value.to_string());
-        if let Some(entry) = self.map.get(&key) {
-            if entry.expires_at > Instant::now() {
-                return Some(entry.fingerprint);
-            }
-            drop(entry);
-            self.map.remove(&key);
-        }
-        None
+        self.cache.get(&key).map(|entry| entry.fingerprint)
     }
 
     pub fn remove(&self, host: &str, cookie_value: &str) {
-        self.map
-            .remove(&(host.to_string(), cookie_value.to_string()));
+        self.cache
+            .invalidate(&(host.to_string(), cookie_value.to_string()));
     }
 
     /// Remove all entries for a given hostname (used on config reload).
     pub fn clear_host(&self, host: &str) {
-        self.map.retain(|k, _| k.0 != host);
-    }
-
-    /// Remove all expired entries (called periodically from background task).
-    pub fn evict_expired(&self) {
-        let now = Instant::now();
-        self.map.retain(|_, v| v.expires_at > now);
+        let host = host.to_string();
+        self.cache
+            .invalidate_entries_if(move |k, _| k.0 == host)
+            .ok();
+        self.cache.run_pending_tasks();
     }
 }
 

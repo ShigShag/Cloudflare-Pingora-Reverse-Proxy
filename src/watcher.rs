@@ -30,8 +30,6 @@ impl BackgroundService for ConfigWatcher {
     {
         Box::pin(async move {
             let path = Path::new(&self.path);
-            let mut tick_counter: u32 = 0;
-
             loop {
                 // 1. Perform the check and reload logic
                 if path.exists() {
@@ -93,13 +91,7 @@ impl BackgroundService for ConfigWatcher {
                     }
                 }
 
-                // 2. Periodic session store cleanup (every 60s = 12 ticks * 5s)
-                tick_counter += 1;
-                if tick_counter % 12 == 0 {
-                    SESSION_STORE.evict_expired();
-                }
-
-                // 3. Wait for either the interval OR the shutdown signal
+                // 2. Wait for either the interval OR the shutdown signal
                 tokio::select! {
                     _ = tokio::time::sleep(Duration::from_secs(5)) => {
                         // Continue loop
