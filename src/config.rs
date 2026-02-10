@@ -8,23 +8,30 @@ use url::Url;
 pub struct RateLimitConfig {
     #[serde(default = "default_rate_limit_enabled")]
     pub enabled: bool,
-    #[serde(default = "default_requests_per_second")]
-    pub requests_per_second: u32,
+    #[serde(default = "default_requests")]
+    pub requests: u32,
+    #[serde(default = "default_window_seconds")]
+    pub window_seconds: u64,
 }
 
 fn default_rate_limit_enabled() -> bool {
     true
 }
 
-fn default_requests_per_second() -> u32 {
+fn default_requests() -> u32 {
     100
+}
+
+fn default_window_seconds() -> u64 {
+    1
 }
 
 impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
             enabled: default_rate_limit_enabled(),
-            requests_per_second: default_requests_per_second(),
+            requests: default_requests(),
+            window_seconds: default_window_seconds(),
         }
     }
 }

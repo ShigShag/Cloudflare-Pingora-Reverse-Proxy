@@ -1,7 +1,8 @@
 # Global rate limit (applies to all hosts unless overridden)
 rate_limit:
   enabled: false
-  requests_per_second: 100
+  requests: 100
+  window_seconds: 1
 
 hosts:
   # Simple format: just upstream URL
@@ -16,7 +17,8 @@ hosts:
     upstream: "https://192.168.99.23:8082"
     rate_limit:
       enabled: true
-      requests_per_second: 50
+      requests: 50
+      window_seconds: 1
     session_binding:
       cookie_name: "session_id"     # Name of the session cookie set by the upstream
       ttl_seconds: 86400            # How long a binding is kept (default: 86400 = 24h)

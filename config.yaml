@@ -1,7 +1,8 @@
 # Global rate limit (applies to all hosts unless overridden)
 rate_limit:
   enabled: false
-  requests_per_second: 100
+  requests: 100
+  window_seconds: 1
 
 hosts:
   "example.local": "http://127.0.0.1:8081"
@@ -10,7 +11,8 @@ hosts:
     upstream: "http://127.0.0.1:3000"
     rate_limit:
       enabled: true
-      requests_per_second: 5000
+      requests: 5000
+      window_seconds: 60
     session_binding:
       cookie_name: "session_token"   # Name of the session cookie set by the upstream
       ttl_seconds: 86400            # How long a binding is kept (default: 86400 = 24h)

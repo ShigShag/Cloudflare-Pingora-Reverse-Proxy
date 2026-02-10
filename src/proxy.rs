@@ -4,6 +4,7 @@ use log::{debug, error, info, warn};
 use pingora::prelude::*;
 use pingora_limits::rate::Rate;
 use pingora_proxy::FailToProxy;
+use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, RwLock};
 use std::time::Duration;
 
@@ -13,8 +14,26 @@ use crate::session_store::{
     SESSION_STORE,
 };
 
-// Global rate limiter with 1-second window
-static RATE_LIMITER: LazyLock<Rate> = LazyLock::new(|| Rate::new(Duration::from_secs(1)));
+// Per-window-duration rate limiters (keyed by window_seconds)
+static RATE_LIMITERS: LazyLock<RwLock<HashMap<u64, Arc<Rate>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+/// Get (or create) a Rate instance for the given window duration in seconds.
+fn get_rate_limiter(window_seconds: u64) -> Arc<Rate> {
+    let window_seconds = window_seconds.max(1);
+    // Fast path: read lock
+    {
+        let map = RATE_LIMITERS.read().unwrap_or_else(|e| e.into_inner());
+        if let Some(rate) = map.get(&window_seconds) {
+            return Arc::clone(rate);
+        }
+    }
+    // Slow path: write lock, insert if missing
+    let mut map = RATE_LIMITERS.write().unwrap_or_else(|e| e.into_inner());
+    Arc::clone(map.entry(window_seconds).or_insert_with(|| {
+        Arc::new(Rate::new(Duration::from_secs(window_seconds)))
+    }))
+}
 
 // Custom 503 error page loaded from static/503.html at first use
 static ERROR_503_HTML: LazyLock<Bytes> = LazyLock::new(|| {
@@ -155,12 +174,13 @@ impl ProxyHttp for HostSwitchProxy {
         // Apply rate limiting if configured
         if let Some(rl_config) = rate_limit_config {
             if rl_config.enabled {
-                let current_count = RATE_LIMITER.observe(&client_ip, 1);
+                let limiter = get_rate_limiter(rl_config.window_seconds);
+                let current_count = limiter.observe(&client_ip, 1);
 
-                if current_count > rl_config.requests_per_second as isize {
+                if current_count > rl_config.requests as isize {
                     warn!(
-                        "Rate limit exceeded for {} on host {}: {}/{}",
-                        client_ip, host, current_count, rl_config.requests_per_second
+                        "Rate limit exceeded for {} on host {}: {}/{} per {}s",
+                        client_ip, host, current_count, rl_config.requests, rl_config.window_seconds
                     );
 
                     return Err(Error::explain(HTTPStatus(429), "Rate limit exceeded"));
