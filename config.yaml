@@ -4,6 +4,9 @@ rate_limit:
   requests: 100
   window_seconds: 1
 
+user_agent_filter:
+  enabled: false
+
 hosts:
   "example.local": "http://127.0.0.1:8081"
   "api.local": "https://192.168.99.23:8082"

@@ -7,6 +7,7 @@ A TLS-enabled reverse proxy built with [Pingora](https://github.com/cloudflare/p
 - Host-based routing with TLS termination and SNI support
 - Hot-reload configuration (5s poll interval, no downtime)
 - Per-host rate limiting (IP-based, sliding window)
+- User-agent filtering (regex blocklist for bots/scanners)
 - Session binding to prevent session hijacking (fingerprints IP, TLS, User-Agent)
 - Custom 503 error page
 - X-Forwarded-For header injection
@@ -25,12 +26,16 @@ rate_limit:
   requests: 100
   window_seconds: 1
 
+# Global user-agent filter (blocks known bots/scanners with 403)
+user_agent_filter:
+  enabled: true
+
 hosts:
   # Simple: just map host -> upstream
   "example.local": "http://127.0.0.1:8081"
   "api.local": "https://192.168.99.23:8082"
 
-  # Advanced: per-host rate limit and session binding
+  # Advanced: per-host rate limit, session binding, and UA filter override
   "app.local":
     upstream: "http://127.0.0.1:3000"
     rate_limit:
@@ -44,7 +49,22 @@ hosts:
         - user_agent
         - tls
         - ip
+
+  # Disable UA filtering for API hosts that need tool access
+  "api-internal.local":
+    upstream: "http://127.0.0.1:9090"
+    user_agent_filter:
+      enabled: false
 ```
+
+### User-Agent Filtering
+
+Blocks requests from known bots, scanners, and malicious tools (curl, wget, sqlmap, Nikto, etc.) based on their User-Agent header. Matched requests receive a `403 Forbidden` response.
+
+- **Global toggle:** Set `user_agent_filter.enabled` in config (default: `true` when present)
+- **Per-host override:** Disable for specific hosts (e.g., API endpoints that need tool access)
+- **Hot-reloadable:** The `enabled` flag reloads with config changes; the regex is compiled once at startup
+- **600+ patterns:** Covers search engine bots, security scanners, scraping tools, and HTTP libraries
 
 ### TLS Certificates
 
@@ -80,5 +100,9 @@ docker run -p 6188:6188 pingora-proxy
 ### Test
 
 ```bash
+# Normal request
 curl -k -H "Host: example.local" https://localhost:6188
+
+# Blocked user-agent (returns 403)
+curl -k -H "Host: example.local" -A "sqlmap/1.0" https://localhost:6188
 ```

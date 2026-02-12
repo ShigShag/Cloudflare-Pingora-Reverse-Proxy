@@ -2,6 +2,7 @@ mod config;
 mod proxy;
 mod session_store;
 mod watcher;
+mod ua_regex;
 
 use config::{AppConfig, ProxyConfig, RawConfig};
 use env_logger::Env;

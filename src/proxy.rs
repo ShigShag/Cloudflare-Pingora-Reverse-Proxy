@@ -103,7 +103,7 @@ impl ProxyHttp for HostSwitchProxy {
         let host = extract_host(session);
 
         // Read config once for this request
-        let (rate_limit_config, session_binding_config) = {
+        let (rate_limit_config, session_binding_config, ua_filter_enabled) = {
             let conf = self.config.read().unwrap_or_else(|e| e.into_inner());
 
             if let Some(upstream) = conf.hosts.get(&host) {
@@ -112,15 +112,51 @@ impl ProxyHttp for HostSwitchProxy {
                 } else {
                     conf.global_rate_limit.clone()
                 };
-                (rl, upstream.session_binding.clone())
+
+                // Per-host overrides global (same pattern as rate_limit)
+                let ua_enabled = if let Some(ref host_ua) = upstream.user_agent_filter {
+                    host_ua.enabled
+                } else if let Some(ref global_ua) = conf.global_user_agent_filter {
+                    global_ua.enabled
+                } else {
+                    false
+                };
+
+                (rl, upstream.session_binding.clone(), ua_enabled)
             } else {
-                (conf.global_rate_limit.clone(), None)
+                let ua_enabled = conf
+                    .global_user_agent_filter
+                    .as_ref()
+                    .map(|f| f.enabled)
+                    .unwrap_or(false);
+                (conf.global_rate_limit.clone(), None, ua_enabled)
             }
         };
 
         // Store host and session binding config in CTX for later phases
         ctx.host = host.clone();
         ctx.session_binding = session_binding_config.clone();
+
+        // User-agent filtering (before session binding and rate limiting)
+        if ua_filter_enabled {
+            let user_agent = session
+                .req_header()
+                .headers
+                .get("User-Agent")
+                .and_then(|h| h.to_str().ok())
+                .unwrap_or("");
+
+            if crate::ua_regex::is_bad_user_agent(user_agent) {
+                warn!(
+                    "Blocked bad user-agent from {} on host {}: UA={}",
+                    client_ip, host, user_agent
+                );
+                return Err(Error::explain(
+                    HTTPStatus(403),
+                    "Forbidden: blocked user agent",
+                ));
+            }
+        }
 
         // Session binding verification
         if let Some(ref sb_config) = session_binding_config {

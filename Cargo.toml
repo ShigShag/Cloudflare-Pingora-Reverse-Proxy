@@ -23,3 +23,5 @@ pingora-limits = "0.7.0"
 moka = { version = "0.12", features = ["sync"] }
 # For response body bytes
 bytes = "1"
+# For user-agent regex filtering
+regex = "1"

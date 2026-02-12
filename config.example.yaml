@@ -4,6 +4,11 @@ rate_limit:
   requests: 100
   window_seconds: 1
 
+# Global user-agent filter (blocks known bots/scanners with 403)
+# Per-host override available to disable for specific hosts
+user_agent_filter:
+  enabled: true
+
 hosts:
   # Simple format: just upstream URL
   "example.local": "http://127.0.0.1:8081"
@@ -26,3 +31,9 @@ hosts:
         - ip                        #   Client IP address
         - tls                       #   TLS version + cipher suite
         - user_agent                #   User-Agent header
+
+  # Disable user-agent filtering for API hosts that need tool access
+  "api-internal.local":
+    upstream: "http://127.0.0.1:9090"
+    user_agent_filter:
+      enabled: false

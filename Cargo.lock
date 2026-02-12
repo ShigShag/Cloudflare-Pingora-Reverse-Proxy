@@ -1985,6 +1985,7 @@ dependencies = [
  "pingora-core",
  "pingora-limits",
  "pingora-proxy",
+ "regex",
  "serde",
  "serde_yaml_ng",
  "tokio",

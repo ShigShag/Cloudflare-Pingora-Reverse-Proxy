@@ -36,6 +36,16 @@ impl Default for RateLimitConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct UserAgentFilterConfig {
+    #[serde(default = "default_ua_filter_enabled")]
+    pub enabled: bool,
+}
+
+fn default_ua_filter_enabled() -> bool {
+    true
+}
+
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum BindAttribute {
@@ -67,6 +77,8 @@ pub enum HostEntry {
         rate_limit: Option<RateLimitConfig>,
         #[serde(default)]
         session_binding: Option<SessionBindingConfig>,
+        #[serde(default)]
+        user_agent_filter: Option<UserAgentFilterConfig>,
     },
 }
 
@@ -74,6 +86,8 @@ pub enum HostEntry {
 pub struct RawConfig {
     #[serde(default)]
     pub rate_limit: Option<RateLimitConfig>,
+    #[serde(default)]
+    pub user_agent_filter: Option<UserAgentFilterConfig>,
     pub hosts: HashMap<String, HostEntry>,
 }
 
@@ -85,12 +99,14 @@ pub struct UpstreamConfig {
     pub sni: String,
     pub rate_limit: Option<RateLimitConfig>,
     pub session_binding: Option<SessionBindingConfig>,
+    pub user_agent_filter: Option<UserAgentFilterConfig>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub hosts: HashMap<String, UpstreamConfig>,
     pub global_rate_limit: Option<RateLimitConfig>,
+    pub global_user_agent_filter: Option<UserAgentFilterConfig>,
 }
 
 pub struct ProxyConfig {
@@ -121,17 +137,20 @@ impl AppConfig {
             .hosts
             .into_iter()
             .map(|(hostname, entry)| {
-                let (upstream_addr, host_rate_limit, host_session_binding) = match entry {
-                    HostEntry::Simple(addr) => (addr, None, None),
-                    HostEntry::Extended {
-                        upstream,
-                        rate_limit,
-                        session_binding,
-                    } => (upstream, rate_limit, session_binding),
-                };
+                let (upstream_addr, host_rate_limit, host_session_binding, host_ua_filter) =
+                    match entry {
+                        HostEntry::Simple(addr) => (addr, None, None, None),
+                        HostEntry::Extended {
+                            upstream,
+                            rate_limit,
+                            session_binding,
+                            user_agent_filter,
+                        } => (upstream, rate_limit, session_binding, user_agent_filter),
+                    };
                 let mut upstream_config = Self::parse_upstream(&upstream_addr);
                 upstream_config.rate_limit = host_rate_limit;
                 upstream_config.session_binding = host_session_binding;
+                upstream_config.user_agent_filter = host_ua_filter;
                 (hostname, upstream_config)
             })
             .collect();
@@ -139,6 +158,7 @@ impl AppConfig {
         AppConfig {
             hosts,
             global_rate_limit: raw.rate_limit,
+            global_user_agent_filter: raw.user_agent_filter,
         }
     }
 
@@ -195,6 +215,7 @@ impl AppConfig {
             sni,
             rate_limit: None,
             session_binding: None,
+            user_agent_filter: None,
         }
     }
 }
