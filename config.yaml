@@ -1,3 +1,10 @@
+# Global WAF configuration
+waf:
+  sql_injection:
+    enabled: false
+    block_mode: false
+  max_inspection_size_mb: 1
+
 # Global rate limit (applies to all hosts unless overridden)
 rate_limit:
   enabled: false
@@ -23,3 +30,9 @@ hosts:
         - user_agent
         - tls
         - ip
+    waf:
+      sql_injection:
+        enabled: true
+        block_mode: false
+      max_inspection_size_mb: 1
+

@@ -13,6 +13,8 @@ use crate::session_store::{
     compute_fingerprint, extract_cookie_value, extract_set_cookie_value, SetCookieResult,
     SESSION_STORE,
 };
+use crate::waf::sql_injection::SqlInjectionRule;
+use crate::waf::{SecurityViolation, WafEngine};
 
 // Per-window-duration rate limiters (keyed by window_seconds)
 static RATE_LIMITERS: LazyLock<RwLock<HashMap<u64, Arc<Rate>>>> =
@@ -59,13 +61,18 @@ fn extract_host(session: &Session) -> String {
 }
 
 pub struct HostSwitchProxy {
-    pub config: Arc<RwLock<AppConfig>>,
+    pub  config: Arc<RwLock<AppConfig>>,
 }
 
 pub struct RequestCtx {
     pub fingerprint: Option<u64>,
     pub host: String,
     pub session_binding: Option<SessionBindingConfig>,
+    // WAF state
+    pub waf_body_buffer: Vec<u8>,
+    pub waf_max_inspection_size: usize,
+    pub waf_body_overlimit: bool,
+    pub waf_violations: Vec<SecurityViolation>,
 }
 
 #[async_trait]
@@ -77,21 +84,14 @@ impl ProxyHttp for HostSwitchProxy {
             fingerprint: None,
             host: String::new(),
             session_binding: None,
+            waf_body_buffer: Vec::new(),
+            waf_max_inspection_size: 1_048_576,
+            waf_body_overlimit: false,
+            waf_violations: Vec::new(),
         }
     }
 
     async fn request_filter(&self, session: &mut Session, ctx: &mut Self::CTX) -> Result<bool> {
-        if let Some(digest) = session.digest() {
-            if let Some(ssl) = &digest.ssl_digest {
-                debug!("--- TLS STATIC ANALYSIS ---");
-                debug!("Version: {:?}", ssl.version);
-                debug!("Negotiated Cipher: {:?}", ssl.cipher);
-                debug!("Cert SN: {:?}", ssl.serial_number);
-            } else {
-                debug!("Request is not TLS (Plaintext)");
-            }
-        }
-
         // Extract client IP for rate limiting key
         let client_ip = session
             .client_addr()
@@ -137,6 +137,34 @@ impl ProxyHttp for HostSwitchProxy {
         ctx.host = host.clone();
         ctx.session_binding = session_binding_config.clone();
 
+        // Max request body size enforcement (413 if Content-Length exceeds limit)
+        {
+            let max_body = {
+                let conf = self.config.read().unwrap_or_else(|e| e.into_inner());
+                conf.resolve_max_request_body(&host)
+            };
+            if max_body > 0 {
+                if let Some(cl) = session
+                    .req_header()
+                    .headers
+                    .get("content-length")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse::<usize>().ok())
+                {
+                    if cl > max_body {
+                        warn!(
+                            "Request body too large ({} > {}) from {} on host {}",
+                            cl, max_body, client_ip, host
+                        );
+                        return Err(Error::explain(
+                            HTTPStatus(413),
+                            "Request body too large",
+                        ));
+                    }
+                }
+            }
+        }
+
         // User-agent filtering (before session binding and rate limiting)
         if ua_filter_enabled {
             let user_agent = session
@@ -155,6 +183,68 @@ impl ProxyHttp for HostSwitchProxy {
                     HTTPStatus(403),
                     "Forbidden: blocked user agent",
                 ));
+            }
+        }
+
+        // --- WAF header inspection ---
+        {
+            let waf_config = {
+                let conf = self.config.read().unwrap_or_else(|e| e.into_inner());
+                conf.resolve_waf_config(&host)
+            };
+
+            if let Some(ref waf_conf) = waf_config {
+                // Store max_inspection_size for body phase
+                ctx.waf_max_inspection_size = waf_conf.max_inspection_size();
+
+                // Early Content-Length check
+                if let Some(cl) = session
+                    .req_header()
+                    .headers
+                    .get("content-length")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse::<usize>().ok())
+                {
+                    if cl > waf_conf.max_inspection_size() {
+                        ctx.waf_body_overlimit = true;
+                        warn!(
+                            "WAF: Request body too large ({} > {}) from {} on host {}",
+                            cl, waf_conf.max_inspection_size(), client_ip, host
+                        );
+                    }
+                }
+
+                // Build WAF engine from current config
+                let mut engine = WafEngine::new();
+
+                if let Some(ref sql_conf) = waf_conf.sql_injection {
+                    if sql_conf.enabled {
+                        engine.add_rule(Box::new(SqlInjectionRule {
+                            enabled: true,
+                            block_mode: sql_conf.block_mode,
+                        }));
+                    }
+                }
+
+                // Run header-phase checks
+                let violations = engine.check_headers(session.req_header());
+
+                for v in &violations {
+                    warn!(
+                        "WAF violation from {} on host {}: [{}/{}] {} (blocked: {})",
+                        client_ip, host, v.threat_type, v.threat_level, v.description, v.blocked
+                    );
+                }
+
+                let should_block = violations.iter().any(|v| v.blocked);
+                ctx.waf_violations.extend(violations);
+
+                if should_block {
+                    return Err(Error::explain(
+                        HTTPStatus(403),
+                        "Forbidden: WAF policy violation",
+                    ));
+                }
             }
         }
 
@@ -225,6 +315,78 @@ impl ProxyHttp for HostSwitchProxy {
         }
 
         Ok(false) // false = continue processing, true = response already sent
+    }
+
+    async fn request_body_filter(
+        &self,
+        session: &mut Session,
+        body: &mut Option<Bytes>,
+        end_of_stream: bool,
+        ctx: &mut Self::CTX,
+    ) -> Result<()> {
+        // Accumulate body chunks (only if WAF is relevant and not overlimit)
+        if !ctx.waf_body_overlimit {
+            if let Some(ref chunk) = body {
+                let new_len = ctx.waf_body_buffer.len() + chunk.len();
+                if new_len > ctx.waf_max_inspection_size {
+                    ctx.waf_body_overlimit = true;
+                    ctx.waf_body_buffer.clear();
+                    warn!(
+                        "WAF: Accumulated body exceeds max_inspection_size ({}) for host {}",
+                        ctx.waf_max_inspection_size, ctx.host
+                    );
+                } else {
+                    ctx.waf_body_buffer.extend_from_slice(chunk);
+                }
+            }
+        }
+
+        // When stream is complete and we have a body, run WAF rules
+        if end_of_stream && !ctx.waf_body_buffer.is_empty() {
+            let waf_config = {
+                let conf = self.config.read().unwrap_or_else(|e| e.into_inner());
+                conf.resolve_waf_config(&ctx.host)
+            };
+
+            if let Some(ref waf_conf) = waf_config {
+                let client_ip = session
+                    .client_addr()
+                    .and_then(|a| a.as_inet().map(|inet| inet.ip()))
+                    .map(|ip| ip.to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                let mut engine = WafEngine::new();
+                if let Some(ref sql_conf) = waf_conf.sql_injection {
+                    if sql_conf.enabled {
+                        engine.add_rule(Box::new(SqlInjectionRule {
+                            enabled: true,
+                            block_mode: sql_conf.block_mode,
+                        }));
+                    }
+                }
+
+                let violations = engine.check_body(&ctx.waf_body_buffer);
+
+                for v in &violations {
+                    warn!(
+                        "WAF body violation from {} on host {}: [{}/{}] {} (blocked: {})",
+                        client_ip, ctx.host, v.threat_type, v.threat_level, v.description, v.blocked
+                    );
+                }
+
+                let should_block = violations.iter().any(|v| v.blocked);
+                ctx.waf_violations.extend(violations);
+
+                if should_block {
+                    return Err(Error::explain(
+                        HTTPStatus(403),
+                        "Forbidden: WAF body inspection blocked request",
+                    ));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     async fn upstream_peer(
@@ -420,16 +582,36 @@ impl ProxyHttp for HostSwitchProxy {
         &self,
         session: &mut Session,
         _e: Option<&pingora::Error>,
-        _ctx: &mut Self::CTX,
+        ctx: &mut Self::CTX,
     ) {
         let response_code = session
             .response_written()
             .map_or(0, |resp| resp.status.as_u16());
+
+        // Log WAF summary if there were violations
+        if !ctx.waf_violations.is_empty() {
+            let blocked_count = ctx.waf_violations.iter().filter(|v| v.blocked).count();
+            let logged_count = ctx.waf_violations.len() - blocked_count;
+            info!(
+                "WAF summary for {} {}: {} violations ({} blocked, {} logged)",
+                session.req_header().method,
+                session.req_header().uri.path(),
+                ctx.waf_violations.len(),
+                blocked_count,
+                logged_count,
+            );
+        }
+
         info!(
             "{} {} {}",
             session.req_header().method,
             session.req_header().uri.path(),
             response_code
         );
+
+        // Clear WAF body buffer for connection reuse
+        ctx.waf_body_buffer.clear();
+        ctx.waf_body_buffer.shrink_to_fit();
+        ctx.waf_violations.clear();
     }
 }

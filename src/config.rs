@@ -4,6 +4,37 @@ use std::collections::HashMap;
 use std::env;
 use url::Url;
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_max_inspection_size_mb() -> usize {
+    1
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct SqlInjectionConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub block_mode: bool,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct WafConfig {
+    #[serde(default)]
+    pub sql_injection: Option<SqlInjectionConfig>,
+    #[serde(default = "default_max_inspection_size_mb")]
+    pub max_inspection_size_mb: usize,
+}
+
+impl WafConfig {
+    /// Max inspection size in bytes (converts from MB config value).
+    pub fn max_inspection_size(&self) -> usize {
+        self.max_inspection_size_mb * 1_048_576
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct RateLimitConfig {
     #[serde(default = "default_rate_limit_enabled")]
@@ -79,7 +110,15 @@ pub enum HostEntry {
         session_binding: Option<SessionBindingConfig>,
         #[serde(default)]
         user_agent_filter: Option<UserAgentFilterConfig>,
+        #[serde(default)]
+        waf: Option<WafConfig>,
+        #[serde(default)]
+        max_request_body_mb: Option<usize>,
     },
+}
+
+fn default_max_request_body_mb() -> usize {
+    0 // 0 = no limit
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -88,6 +127,10 @@ pub struct RawConfig {
     pub rate_limit: Option<RateLimitConfig>,
     #[serde(default)]
     pub user_agent_filter: Option<UserAgentFilterConfig>,
+    #[serde(default)]
+    pub waf: Option<WafConfig>,
+    #[serde(default = "default_max_request_body_mb")]
+    pub max_request_body_mb: usize,
     pub hosts: HashMap<String, HostEntry>,
 }
 
@@ -100,6 +143,8 @@ pub struct UpstreamConfig {
     pub rate_limit: Option<RateLimitConfig>,
     pub session_binding: Option<SessionBindingConfig>,
     pub user_agent_filter: Option<UserAgentFilterConfig>,
+    pub waf: Option<WafConfig>,
+    pub max_request_body_mb: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -107,6 +152,8 @@ pub struct AppConfig {
     pub hosts: HashMap<String, UpstreamConfig>,
     pub global_rate_limit: Option<RateLimitConfig>,
     pub global_user_agent_filter: Option<UserAgentFilterConfig>,
+    pub global_waf: Option<WafConfig>,
+    pub global_max_request_body_mb: usize,
 }
 
 pub struct ProxyConfig {
@@ -137,20 +184,24 @@ impl AppConfig {
             .hosts
             .into_iter()
             .map(|(hostname, entry)| {
-                let (upstream_addr, host_rate_limit, host_session_binding, host_ua_filter) =
+                let (upstream_addr, host_rate_limit, host_session_binding, host_ua_filter, host_waf, host_max_body) =
                     match entry {
-                        HostEntry::Simple(addr) => (addr, None, None, None),
+                        HostEntry::Simple(addr) => (addr, None, None, None, None, None),
                         HostEntry::Extended {
                             upstream,
                             rate_limit,
                             session_binding,
                             user_agent_filter,
-                        } => (upstream, rate_limit, session_binding, user_agent_filter),
+                            waf,
+                            max_request_body_mb,
+                        } => (upstream, rate_limit, session_binding, user_agent_filter, waf, max_request_body_mb),
                     };
                 let mut upstream_config = Self::parse_upstream(&upstream_addr);
                 upstream_config.rate_limit = host_rate_limit;
                 upstream_config.session_binding = host_session_binding;
                 upstream_config.user_agent_filter = host_ua_filter;
+                upstream_config.waf = host_waf;
+                upstream_config.max_request_body_mb = host_max_body;
                 (hostname, upstream_config)
             })
             .collect();
@@ -159,6 +210,8 @@ impl AppConfig {
             hosts,
             global_rate_limit: raw.rate_limit,
             global_user_agent_filter: raw.user_agent_filter,
+            global_waf: raw.waf,
+            global_max_request_body_mb: raw.max_request_body_mb,
         }
     }
 
@@ -216,6 +269,29 @@ impl AppConfig {
             rate_limit: None,
             session_binding: None,
             user_agent_filter: None,
+            waf: None,
+            max_request_body_mb: None,
         }
+    }
+
+    /// Resolve max request body size (in bytes) for a host.
+    /// Per-host overrides global. Returns 0 if no limit is set.
+    pub fn resolve_max_request_body(&self, host: &str) -> usize {
+        let mb = self
+            .hosts
+            .get(host)
+            .and_then(|u| u.max_request_body_mb)
+            .unwrap_or(self.global_max_request_body_mb);
+        mb * 1_048_576
+    }
+
+    /// Resolve WAF config for a given host: per-host overrides global.
+    pub fn resolve_waf_config(&self, host: &str) -> Option<WafConfig> {
+        if let Some(upstream) = self.hosts.get(host) {
+            if upstream.waf.is_some() {
+                return upstream.waf.clone();
+            }
+        }
+        self.global_waf.clone()
     }
 }

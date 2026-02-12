@@ -1,6 +1,7 @@
 mod config;
 mod proxy;
 mod session_store;
+mod waf;
 mod watcher;
 mod ua_regex;
 

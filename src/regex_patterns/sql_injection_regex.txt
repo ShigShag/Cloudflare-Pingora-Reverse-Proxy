@@ -1,0 +1,102 @@
+# SQL Injection Detection Patterns
+# Each non-empty, non-comment line is a regex alternation branch.
+# All patterns are compiled into a single case-insensitive regex.
+
+# 1. UNION SELECT
+(?:union\s+(?:all\s+)?select)
+
+# 2. Boolean injection with OR
+(?:'\s*or\s+['"]?\d+['"]?\s*=\s*['"]?\d+)
+
+# 3. Boolean injection with AND
+(?:'\s*and\s+['"]?\d+['"]?\s*=\s*['"]?\d+)
+
+# 4. INSERT INTO
+(?:insert\s+into\s+\w+)
+
+# 5. DELETE FROM
+(?:delete\s+from\s+\w+)
+
+# 6. DROP TABLE/DATABASE/etc
+(?:drop\s+(?:table|database|column|index|view)\b)
+
+# 7. UPDATE SET
+(?:update\s+\w+\s+set\b)
+
+# 8. Statement termination followed by SQL keyword
+(?:;\s*(?:select|insert|update|delete|drop|alter|create|exec|union)\b)
+
+# 9. SQL comment injection (-- or # or /* followed by keyword)
+(?:(?:--|#|\/\*)\s*(?:select|insert|update|delete|drop|alter|create|exec|union)\b)
+
+# 10. Inline comment bypass
+(?:\/\*.*?\*\/\s*(?:select|insert|update|delete|drop|union)\b)
+
+# 11. Stored procedures (xp_ and sp_)
+(?:(?:xp|sp)_\w+)
+
+# 12. BENCHMARK (time-based blind)
+(?:benchmark\s*\(\s*\d+)
+
+# 13. SLEEP (time-based blind)
+(?:sleep\s*\(\s*\d+)
+
+# 14. WAITFOR DELAY (time-based blind, MSSQL)
+(?:waitfor\s+delay\s+')
+
+# 15. Hex encoding bypass
+(?:0x[0-9a-f]{8,})
+
+# 16. CHAR() function bypass
+(?:char\s*\(\s*\d+(?:\s*,\s*\d+)*\s*\))
+
+# 17. SELECT FROM
+(?:select\s+.{1,100}\s+from\s+\w+)
+
+# 18. XML Function Exploits (MySQL/PostgreSQL Error-Based)
+(?:extractvalue\s*\(|updatexml\s*\()
+
+# 19. Geometric Function Exploits (MySQL Error-Based)
+(?:geometrycollection\s*\(|multipoint\s*\(|polygon\s*\()
+
+# 20. Type Conversion Errors (MSSQL Error-Based)
+(?:convert\s*\(\s*(?:int|bigint|numeric|varchar)\s*,\s*)
+
+# 21. Schema Enumeration (Information Schema)
+(?:from\s+information_schema\.(?:tables|columns|schemata))
+
+# 22. Database Version Fingerprinting
+(?:@@version|version\s*\(\s*\)|v\$version)
+
+# 23. System User Reconnaissance
+(?:user\s*\(\s*\)|system_user|current_user|session_user)
+
+# 24. Universal Tautologies (Numeric/No Quotes)
+(?:\b\d+\s*=\s*\d+)
+
+# 25. HAVING Clause Injection
+(?:having\s+['"]?\d+['"]?\s*=\s*['"]?\d+)
+
+# 26. LIKE/ILIKE Boolean Inference
+(?:['"]?\s+(?:not\s+)?like\s+['"])
+
+# 27. PostgreSQL Time-Based (pg_sleep)
+(?:pg_sleep\s*\(\s*\d+)
+
+# 28. Oracle DBMS Packages (Time-Based/OOB)
+(?:dbms_pipe\.receive_message|dbms_lock\.sleep)
+
+# 29. MySQL Conditional Logic (IF)
+(?:if\s*\(\s*.+?,\s*.+?,\s*.+?\))
+
+# 30. SQL CASE Statements
+(?:case\s+when\s+.+?\s+then\s+.+?\s+end)
+
+# 31. String Concatenation (Filter Evasion)
+(?:\|\||concat\s*\()
+
+# 32. ASCII/ORD Blind Injection
+(?:(?:ascii|ord)\s*\(\s*.+?\s*\)\s*[<>=])
+
+# 33. Null Byte Injection
+(?:%00|\\0)

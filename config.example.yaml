@@ -1,3 +1,16 @@
+# Max request body size in MB (413 if exceeded). 0 = no limit.
+# Per-host override available.
+max_request_body_mb: 10
+
+# Global WAF configuration
+# Inspects URI, custom headers, and request body for attack patterns.
+# Per-host override available to disable for specific hosts.
+waf:
+  sql_injection:
+    enabled: true
+    block_mode: true       # false = log-only (detect but don't block)
+  max_inspection_size_mb: 1 # Max body size to buffer for WAF pattern scanning
+
 # Global rate limit (applies to all hosts unless overridden)
 rate_limit:
   enabled: false
@@ -32,8 +45,16 @@ hosts:
         - tls                       #   TLS version + cipher suite
         - user_agent                #   User-Agent header
 
-  # Disable user-agent filtering for API hosts that need tool access
+  # Disable user-agent filtering and WAF for API hosts that need tool access
   "api-internal.local":
     upstream: "http://127.0.0.1:9090"
     user_agent_filter:
       enabled: false
+    waf:
+      sql_injection:
+        enabled: false
+
+  # Per-host max request body size override (e.g. allow larger uploads)
+  "uploads.local":
+    upstream: "http://127.0.0.1:8085"
+    max_request_body_mb: 50

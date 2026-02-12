@@ -25,3 +25,5 @@ moka = { version = "0.12", features = ["sync"] }
 bytes = "1"
 # For user-agent regex filtering
 regex = "1"
+# For WAF URL decoding before pattern matching
+urlencoding = "2"
