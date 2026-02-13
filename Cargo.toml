@@ -27,3 +27,5 @@ bytes = "1"
 regex = "1"
 # For WAF URL decoding before pattern matching
 urlencoding = "2"
+# For config change detection via content hashing
+xxhash-rust = { version = "0.8", features = ["xxh3"] }

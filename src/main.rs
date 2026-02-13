@@ -15,8 +15,7 @@ use proxy::HostSwitchProxy;
 use std::fs::File;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
-use std::time::SystemTime;
-use watcher::ConfigWatcher;
+use watcher::{compute_file_hash, ConfigWatcher};
 
 fn main() {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
@@ -39,10 +38,12 @@ fn main() {
     my_server.bootstrap();
 
     // 4. Setup Background Config Watcher
+    let initial_hash = compute_file_hash(Path::new(&env_conf.config_path))
+        .expect("Could not hash config file");
     let watcher_logic = ConfigWatcher {
         path: env_conf.config_path.clone(),
         config: config_wrapper.clone(),
-        last_mtime: Arc::new(RwLock::new(SystemTime::now())),
+        last_hash: Arc::new(RwLock::new(initial_hash)),
     };
 
     let watcher_service = background_service("config_watcher", watcher_logic);

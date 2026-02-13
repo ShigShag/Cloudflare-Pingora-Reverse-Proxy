@@ -83,7 +83,7 @@ EXPOSE 6188
 ENV PROXY_HOST=0.0.0.0
 ENV PROXY_PORT=6188
 ENV CERT_DIR=/usr/src/pingora_proxy/certificate
-ENV CONFIG_PATH=/usr/src/pingora_proxy/config.yaml
+ENV CONFIG_PATH=/usr/src/pingora_proxy/config/config.yaml
 ENV STATIC_DIR=/usr/src/pingora_proxy/static
 ENV RUST_LOG=info
 

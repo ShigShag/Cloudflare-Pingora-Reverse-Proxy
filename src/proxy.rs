@@ -40,6 +40,15 @@ fn get_rate_limiter(window_seconds: u64) -> Arc<Rate> {
     }))
 }
 
+// Custom 502 error page loaded from static/502.html at first use (DNS resolution failures)
+static ERROR_502_HTML: LazyLock<Bytes> = LazyLock::new(|| {
+    let dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "./static".to_string());
+    let path = format!("{}/502.html", dir);
+    std::fs::read(&path)
+        .map(Bytes::from)
+        .unwrap_or_else(|_| Bytes::from_static(b"<h1>502 Bad Gateway</h1>"))
+});
+
 // Custom 503 error page loaded from static/503.html at first use
 static ERROR_503_HTML: LazyLock<Bytes> = LazyLock::new(|| {
     let dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "./static".to_string());
@@ -597,7 +606,7 @@ impl ProxyHttp for HostSwitchProxy {
                 session.respond_error(*code).await.ok();
                 *code
             }
-            ConnectRefused | ConnectTimedout | ConnectNoRoute | ConnectError => {
+            ConnectRefused | ConnectTimedout | ConnectNoRoute => {
                 // Upstream unreachable — serve styled 503 page
                 let mut resp = ResponseHeader::build(503, Some(3)).unwrap();
                 resp.insert_header("Content-Type", "text/html; charset=utf-8")
@@ -612,6 +621,36 @@ impl ProxyHttp for HostSwitchProxy {
                     .await
                     .ok();
                 503
+            }
+            ConnectError => {
+                // ConnectError typically indicates DNS resolution failure
+                // (e.g. container stopped in a Docker network)
+                let err_str = format!("{e}").to_lowercase();
+                let is_dns = err_str.contains("dns")
+                    || err_str.contains("resolve")
+                    || err_str.contains("name or service not known")
+                    || err_str.contains("no such host")
+                    || err_str.contains("name resolution");
+
+                let (code, body) = if is_dns {
+                    (502, ERROR_502_HTML.clone())
+                } else {
+                    (503, ERROR_503_HTML.clone())
+                };
+
+                let mut resp = ResponseHeader::build(code, Some(3)).unwrap();
+                resp.insert_header("Content-Type", "text/html; charset=utf-8")
+                    .ok();
+                resp.insert_header("Cache-Control", "no-store").ok();
+                session
+                    .write_response_header(Box::new(resp), false)
+                    .await
+                    .ok();
+                session
+                    .write_response_body(Some(body), true)
+                    .await
+                    .ok();
+                code
             }
             _ => {
                 let code = match e.esource() {

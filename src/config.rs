@@ -199,7 +199,7 @@ impl ProxyConfig {
             host: env::var("PROXY_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: env::var("PROXY_PORT").unwrap_or_else(|_| "6188".to_string()),
             cert_dir: env::var("CERT_DIR").unwrap_or_else(|_| "./certificate".to_string()),
-            config_path: env::var("CONFIG_PATH").unwrap_or_else(|_| "config.yaml".to_string()),
+            config_path: env::var("CONFIG_PATH").unwrap_or_else(|_| "config/config.yaml".to_string()),
         }
     }
 
