@@ -118,7 +118,7 @@ impl ProxyHttp for HostSwitchProxy {
         let (rate_limit_config, session_binding_config, ua_filter_enabled) = {
             let conf = self.config.read().unwrap_or_else(|e| e.into_inner());
 
-            if let Some(upstream) = conf.hosts.get(&host) {
+            if let Some(upstream) = conf.hosts.get(&host).or(conf.default_upstream.as_ref()) {
                 let rl = if upstream.rate_limit.is_some() {
                     upstream.rate_limit.clone()
                 } else {
@@ -464,7 +464,7 @@ impl ProxyHttp for HostSwitchProxy {
 
         let upstream_config = {
             let conf = self.config.read().unwrap_or_else(|e| e.into_inner());
-            conf.hosts.get(&host).cloned()
+            conf.hosts.get(&host).or(conf.default_upstream.as_ref()).cloned()
         };
 
         if let Some(config) = upstream_config {

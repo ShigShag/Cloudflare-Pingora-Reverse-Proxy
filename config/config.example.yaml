@@ -28,6 +28,11 @@ rate_limit:
 user_agent_filter:
   enabled: true
 
+# Optional default host: catch-all for requests whose Host header
+# doesn't match any entry in 'hosts'. Omit to return 404 for unknown hosts.
+# Supports both simple and extended format (same as hosts entries).
+# default_host: "http://127.0.0.1:8080"
+
 hosts:
   # Simple format: just upstream URL
   "example.local": "http://127.0.0.1:8081"

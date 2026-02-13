@@ -162,6 +162,8 @@ pub struct RawConfig {
     #[serde(default = "default_max_request_body_mb")]
     pub max_request_body_mb: usize,
     pub hosts: HashMap<String, HostEntry>,
+    #[serde(default)]
+    pub default_host: Option<HostEntry>,
 }
 
 #[derive(Debug, Clone)]
@@ -180,6 +182,7 @@ pub struct UpstreamConfig {
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub hosts: HashMap<String, UpstreamConfig>,
+    pub default_upstream: Option<UpstreamConfig>,
     pub global_rate_limit: Option<RateLimitConfig>,
     pub global_user_agent_filter: Option<UserAgentFilterConfig>,
     pub global_waf: Option<WafConfig>,
@@ -236,8 +239,31 @@ impl AppConfig {
             })
             .collect();
 
+        let default_upstream = raw.default_host.map(|entry| {
+            let (upstream_addr, host_rate_limit, host_session_binding, host_ua_filter, host_waf, host_max_body) =
+                match entry {
+                    HostEntry::Simple(addr) => (addr, None, None, None, None, None),
+                    HostEntry::Extended {
+                        upstream,
+                        rate_limit,
+                        session_binding,
+                        user_agent_filter,
+                        waf,
+                        max_request_body_mb,
+                    } => (upstream, rate_limit, session_binding, user_agent_filter, waf, max_request_body_mb),
+                };
+            let mut upstream_config = Self::parse_upstream(&upstream_addr);
+            upstream_config.rate_limit = host_rate_limit;
+            upstream_config.session_binding = host_session_binding;
+            upstream_config.user_agent_filter = host_ua_filter;
+            upstream_config.waf = host_waf;
+            upstream_config.max_request_body_mb = host_max_body;
+            upstream_config
+        });
+
         AppConfig {
             hosts,
+            default_upstream,
             global_rate_limit: raw.rate_limit,
             global_user_agent_filter: raw.user_agent_filter,
             global_waf: raw.waf,
@@ -304,12 +330,16 @@ impl AppConfig {
         }
     }
 
+    /// Look up the UpstreamConfig for a host, falling back to default_upstream.
+    pub fn resolve_upstream(&self, host: &str) -> Option<&UpstreamConfig> {
+        self.hosts.get(host).or(self.default_upstream.as_ref())
+    }
+
     /// Resolve max request body size (in bytes) for a host.
     /// Per-host overrides global. Returns 0 if no limit is set.
     pub fn resolve_max_request_body(&self, host: &str) -> usize {
         let mb = self
-            .hosts
-            .get(host)
+            .resolve_upstream(host)
             .and_then(|u| u.max_request_body_mb)
             .unwrap_or(self.global_max_request_body_mb);
         mb * 1_048_576
@@ -317,7 +347,7 @@ impl AppConfig {
 
     /// Resolve WAF config for a given host: per-host overrides global.
     pub fn resolve_waf_config(&self, host: &str) -> Option<WafConfig> {
-        if let Some(upstream) = self.hosts.get(host) {
+        if let Some(upstream) = self.resolve_upstream(host) {
             if upstream.waf.is_some() {
                 return upstream.waf.clone();
             }

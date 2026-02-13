@@ -73,6 +73,21 @@ impl BackgroundService for ConfigWatcher {
                                                 SESSION_STORE.clear_host(hostname);
                                             }
                                         }
+
+                                        // Log if default_host session binding changed
+                                        let old_default_binding = old_conf
+                                            .default_upstream
+                                            .as_ref()
+                                            .and_then(|u| u.session_binding.as_ref());
+                                        let new_default_binding = new_config
+                                            .default_upstream
+                                            .as_ref()
+                                            .and_then(|u| u.session_binding.as_ref());
+                                        if old_default_binding != new_default_binding {
+                                            if old_default_binding.is_some() {
+                                                info!("default_host session binding config changed; existing sessions will re-bind on expiry");
+                                            }
+                                        }
                                     }
 
                                     *self.config.write().unwrap_or_else(|e| {
