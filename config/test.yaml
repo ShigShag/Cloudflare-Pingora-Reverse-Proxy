@@ -1,0 +1,75 @@
+max_request_body_mb: 10
+
+hosts:
+  "shigshag.com":
+    upstream: "https://shigshag-app:8000"
+    rate_limit:
+      enabled: true
+      requests: 100
+      window_seconds: 1
+
+  "www.shigshag.com":
+    upstream: "https://shigshag-app:8000"
+    rate_limit:
+      enabled: true
+      requests: 100
+      window_seconds: 1
+
+  # Captchacat
+  "captchacat.com": 
+    upstream: "https://captchacat-website:8081"
+    rate_limit:
+      enabled: true
+      requests: 100
+      window_seconds: 1
+
+  "www.captchacat.com": 
+    upstream: "https://captchacat-website:8081"
+    rate_limit:
+      enabled: true
+      requests: 100
+      window_seconds: 1
+
+  "dashboard.captchacat.com":
+    upstream: "https://captchacat-dashboard:8080"
+    rate_limit:
+      enabled: true
+      requests: 100
+      window_seconds: 1
+    waf:
+      sql_injection:
+        enabled: true
+        block_mode: true
+      path_traversal:
+        enabled: true
+        block_mode: true
+      xss:
+        enabled: true
+        block_mode: true
+      command_injection:
+        enabled: true
+        block_mode: true
+      max_inspection_size_mb: 1
+
+  "challenge.captchacat.com": "https://captchacat-challenge_backend:8080"
+
+  "docs.captchacat.com":
+    upstream: "http://captcha-cat-docs:3000"
+    rate_limit:
+      enabled: true
+      requests: 20
+      window_seconds: 1
+    waf:
+      sql_injection:
+        enabled: true
+        block_mode: true
+      path_traversal:
+        enabled: true
+        block_mode: true
+      xss:
+        enabled: true
+        block_mode: true
+      command_injection:
+        enabled: true
+        block_mode: true
+      max_inspection_size_mb: 1

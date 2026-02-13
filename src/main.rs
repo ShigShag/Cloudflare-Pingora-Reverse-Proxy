@@ -56,8 +56,8 @@ fn main() {
     let mut lb_service = http_proxy_service(&my_server.configuration, proxy_logic);
 
     // 6. Configure TLS
-    let cert_path = format!("{}/server.crt", env_conf.cert_dir);
-    let key_path = format!("{}/server.key", env_conf.cert_dir);
+    let cert_path = format!("{}/{}", env_conf.cert_dir, env_conf.cert_file);
+    let key_path = format!("{}/{}", env_conf.cert_dir, env_conf.key_file);
 
     if !Path::new(&cert_path).exists() || !Path::new(&key_path).exists() {
         panic!(

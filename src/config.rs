@@ -193,6 +193,8 @@ pub struct ProxyConfig {
     pub host: String,
     pub port: String,
     pub cert_dir: String,
+    pub cert_file: String,
+    pub key_file: String,
     pub config_path: String,
 }
 
@@ -202,6 +204,8 @@ impl ProxyConfig {
             host: env::var("PROXY_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: env::var("PROXY_PORT").unwrap_or_else(|_| "6188".to_string()),
             cert_dir: env::var("CERT_DIR").unwrap_or_else(|_| "./certificate".to_string()),
+            cert_file: env::var("CERT_FILE").unwrap_or_else(|_| "server.crt".to_string()),
+            key_file: env::var("KEY_FILE").unwrap_or_else(|_| "server.key".to_string()),
             config_path: env::var("CONFIG_PATH").unwrap_or_else(|_| "config/config.yaml".to_string()),
         }
     }
