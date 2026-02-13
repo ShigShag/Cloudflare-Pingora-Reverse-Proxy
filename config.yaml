@@ -3,6 +3,9 @@ waf:
   sql_injection:
     enabled: false
     block_mode: false
+  path_traversal:
+    enabled: false
+    block_mode: false
   max_inspection_size_mb: 1
 
 # Global rate limit (applies to all hosts unless overridden)
@@ -34,5 +37,14 @@ hosts:
       sql_injection:
         enabled: true
         block_mode: false
+      path_traversal:
+        enabled: true
+        block_mode: true
+      xss:
+        enabled: true
+        block_mode: true
+      command_injection:
+        enabled: true
+        block_mode: true
       max_inspection_size_mb: 1
 

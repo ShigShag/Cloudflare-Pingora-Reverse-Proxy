@@ -108,3 +108,11 @@ static SAFE_HEADERS: &[&str] = &[
 /// O(1) lookup set for safe headers.
 pub static SAFE_HEADER_SET: LazyLock<HashSet<&'static str>> =
     LazyLock::new(|| SAFE_HEADERS.iter().copied().collect());
+
+/// Truncate a string for log output.
+pub fn truncate(s: &str, max_len: usize) -> &str {
+    match s.char_indices().nth(max_len) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
+    }
+}

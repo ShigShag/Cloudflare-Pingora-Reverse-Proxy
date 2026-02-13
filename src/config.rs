@@ -21,9 +21,39 @@ pub struct SqlInjectionConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct CommandInjectionConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub block_mode: bool,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PathTraversalConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub block_mode: bool,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct XssConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub block_mode: bool,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct WafConfig {
     #[serde(default)]
     pub sql_injection: Option<SqlInjectionConfig>,
+    #[serde(default)]
+    pub xss: Option<XssConfig>,
+    #[serde(default)]
+    pub command_injection: Option<CommandInjectionConfig>,
+    #[serde(default)]
+    pub path_traversal: Option<PathTraversalConfig>,
     #[serde(default = "default_max_inspection_size_mb")]
     pub max_inspection_size_mb: usize,
 }

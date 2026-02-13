@@ -9,6 +9,12 @@ waf:
   sql_injection:
     enabled: true
     block_mode: true       # false = log-only (detect but don't block)
+  xss:
+    enabled: true
+    block_mode: true       # false = log-only (detect but don't block)
+  command_injection:
+    enabled: true
+    block_mode: true       # false = log-only (detect but don't block)
   max_inspection_size_mb: 1 # Max body size to buffer for WAF pattern scanning
 
 # Global rate limit (applies to all hosts unless overridden)
@@ -52,6 +58,10 @@ hosts:
       enabled: false
     waf:
       sql_injection:
+        enabled: false
+      xss:
+        enabled: false
+      command_injection:
         enabled: false
 
   # Per-host max request body size override (e.g. allow larger uploads)

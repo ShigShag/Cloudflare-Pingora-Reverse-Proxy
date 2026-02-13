@@ -2,48 +2,48 @@ use pingora::prelude::*;
 use regex::Regex;
 use std::sync::LazyLock;
 
-use super::rule::{truncate, SecurityRule, SecurityViolation, ThreatLevel, ThreatType, SAFE_HEADER_SET};
+use super::rule::*;
 
 /// Raw patterns loaded from file at compile time.
-const SQL_INJECTION_PATTERNS: &str = include_str!("../regex_patterns/sql_injection_regex.txt");
+const XSS_PATTERNS: &str = include_str!("../regex_patterns/xss_regex.txt");
 
 /// Compiled master regex (case-insensitive, all patterns OR'd).
-static SQL_INJECTION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    let pattern = SQL_INJECTION_PATTERNS
+static XSS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    let pattern = XSS_PATTERNS
         .lines()
         .map(|l| l.trim())
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .collect::<Vec<_>>()
         .join("|");
     let full = format!("(?i)(?:{})", pattern);
-    Regex::new(&full).expect("Failed to compile SQL injection regex")
+    Regex::new(&full).expect("Failed to compile XSS regex")
 });
 
-pub struct SqlInjectionRule {
+pub struct XssRule {
     pub enabled: bool,
     pub block_mode: bool,
 }
 
-impl SqlInjectionRule {
-    /// URL-decode the input, then check against the SQL injection regex.
+impl XssRule {
+    /// URL-decode the input, then check against the XSS regex.
     fn is_malicious(input: &str) -> bool {
         let decoded = urlencoding::decode(input).unwrap_or(std::borrow::Cow::Borrowed(input));
-        SQL_INJECTION_REGEX.is_match(&decoded)
+        XSS_REGEX.is_match(&decoded)
     }
 
     fn make_violation(&self, description: String) -> SecurityViolation {
         SecurityViolation {
-            threat_type: ThreatType::SqlInjection,
-            threat_level: ThreatLevel::Critical,
+            threat_type: ThreatType::Xss,
+            threat_level: ThreatLevel::High,
             description,
             blocked: self.block_mode,
         }
     }
 }
 
-impl SecurityRule for SqlInjectionRule {
+impl SecurityRule for XssRule {
     fn name(&self) -> &str {
-        "SQL Injection"
+        "XSS"
     }
 
     fn enabled(&self) -> bool {
@@ -61,7 +61,7 @@ impl SecurityRule for SqlInjectionRule {
         let uri = req.uri.to_string();
         if Self::is_malicious(&uri) {
             violations.push(
-                self.make_violation(format!("SQL injection detected in URI: {}", truncate(&uri, 200))),
+                self.make_violation(format!("XSS detected in URI: {}", truncate(&uri, 200))),
             );
         }
 
@@ -74,7 +74,7 @@ impl SecurityRule for SqlInjectionRule {
             if let Ok(val_str) = value.to_str() {
                 if Self::is_malicious(val_str) {
                     violations.push(self.make_violation(format!(
-                        "SQL injection detected in header '{}': {}",
+                        "XSS detected in header '{}': {}",
                         name,
                         truncate(val_str, 200)
                     )));
@@ -90,10 +90,17 @@ impl SecurityRule for SqlInjectionRule {
         let body_str = String::from_utf8_lossy(body);
         if Self::is_malicious(&body_str) {
             violations.push(
-                self.make_violation("SQL injection detected in request body".to_string()),
+                self.make_violation("XSS detected in request body".to_string()),
             );
         }
         violations
     }
 }
 
+/// Truncate a string for log output.
+fn truncate(s: &str, max_len: usize) -> &str {
+    match s.char_indices().nth(max_len) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
+    }
+}

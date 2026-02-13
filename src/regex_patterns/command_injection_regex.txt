@@ -1,0 +1,40 @@
+# Command Injection Detection Patterns (Consolidated & Expanded)
+# Each non-empty, non-comment line is a regex alternation branch.
+
+# 1. Master Command Chaining (Captures ; || && | \n $() ``)
+# Replaces original Rules 1, 2, 3, 4, 5, 6, 20
+# Added: Null bytes, newlines, and space bypasses like ${IFS}
+(?:(?:;|\||\|\||&&|\n|\r|%0[ad]|\$\(|\`)\s*[\s\w$<{}-]*\b(?:ls|cat|id|whoami|uname|pwd|wget|curl|nc|ncat|netcat|sh|bash|zsh|dash|csh|ksh|php|perl|python|ruby|gcc|tar|zip|unzip|scp|ssh|socat|tftp|mysql|git|nmap|tcpdump|nslookup|dig|arp|tee|xargs|awk|sed|openssl|base64|dd|crontab|find|kill|pkill|nohup|rm|mv|cp|mkdir|touch|echo|printf)\b)
+
+# 2. Space Bypasses & Redirection (Original Rule 29 + IFS)
+# Detects: ;cat${IFS}/etc/passwd or <file or {cat,passwd}
+(?:(?:\$\{IFS\}|%09|<|>|\{+,))
+
+# 3. Critical File Access (Original Rules 7, 8 + Windows)
+# Consolidated generic file reading attempts
+(?:\s(?:/etc/(?:passwd|shadow|issue|hosts|group|sudoers)|/proc/(?:self|version)|/root/|C:\\Windows|/dev/null))
+
+# 4. Wildcard/Obfuscated Binaries (New)
+# Detects: /bin/c?? instead of /bin/cat
+(?:/(?:bin|usr|sbin)/[\?\*\[\]]{2,})
+
+# 5. Reverse Shells (Original Rules 9, 10, 11, 12)
+# Covers bash -i, /dev/tcp, nc -e, mkfifo
+(?:(?:bash\s+-i|/dev/(?:tcp|udp)/|nc\s+.*-e\s|mkfifo\s))
+
+# 6. Dangerous Download/Execution (Original Rules 13, 14)
+# Covers wget -O, curl | bash
+(?:(?:wget|curl).*\s+(?:-[oO]\s|\|\s*sh))
+
+# 7. Dangerous File Operations (Original Rules 15, 16, 27, 28)
+# Covers rm -rf, chmod 777, dd if=, tar --to-command
+(?:(?:rm\s+-[a-zA-Z]*r[a-zA-Z]*f|chmod\s+(?:777|\+s)|dd\s+.*(?:if|of)=|tar\s+.*--(?:checkpoint|to-command)))
+
+# 8. Language Execution Flags (Original Rule 17)
+(?:(?:python|perl|ruby|php|node)\s+-[a-zA-Z]*[ec]\s)
+
+# 9. Windows Execution (Original Rules 18, 19)
+(?:cmd(?:\.exe)?\s+/[ck]\s|powershell(?:\.exe)?\s)
+
+# 10. Environment Variable Exfiltration (Original Rule 21)
+(?:\$(?:PATH|HOME|USER|SHELL|HOSTNAME|IFS|TERM)\b)

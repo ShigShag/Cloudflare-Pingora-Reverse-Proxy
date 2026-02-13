@@ -1,0 +1,32 @@
+# XSS Detection Patterns (Consolidated & Expanded)
+# Each non-empty, non-comment line is a regex alternation branch.
+
+# 1. Script Tags (Original Rules 1, 2)
+# Improved: Handles null bytes, mixed case, and broken tags
+(?:<[\x00-\x20/]*script[\x00-\x20>])
+
+# 2. Generic Event Handlers (Replaces Original Rules 3, 4, 5)
+# Improved: Catches ALL events (onload, onanimationstart, onfocus, etc.)
+(?:\bon[a-zA-Z]{3,}\s*=[^>]*>)
+
+# 3. Javascript Pseudo-protocol (Original Rule 6)
+# Improved: Handles tabs/newlines in "java script"
+(?:j\s*a\s*v\s*a\s*s\s*c\s*r\s*i\s*p\s*t\s*:)
+
+# 4. Dangerous HTML5/SVG Tags (Replaces Original Rules 7, 8, 9)
+# Expanded: Added svg, math, keygen, details, audio, video
+(?:<\s*(?:iframe|object|embed|svg|math|keygen|details|audio|video|source)[\s/>])
+
+# 5. Dangerous JS Functions (Original Rules 10, 11)
+# Consolidated: eval, alert, prompt, confirm, plus Function()
+(?:\b(?:eval|alert|prompt|confirm|setTimeout|setInterval|Function|location\.href)\s*\()
+
+# 6. Data URIs (Original Rule 13)
+(?:data\s*:\s*(?:text/html|image/svg\+xml|application/xml))
+
+# 7. Legacy CSS Expressions (Original Rule 12)
+(?:\bexpression\s*\()
+
+# 8. Auto-execution attributes (New)
+# Catches <input autofocus> which executes JS on load
+(?:<[^>]*\s+autofocus[^>]*>)

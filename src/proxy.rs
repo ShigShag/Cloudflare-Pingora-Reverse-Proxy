@@ -13,7 +13,10 @@ use crate::session_store::{
     compute_fingerprint, extract_cookie_value, extract_set_cookie_value, SetCookieResult,
     SESSION_STORE,
 };
+use crate::waf::command_injection::CommandInjectionRule;
+use crate::waf::path_traversal::PathTraversalRule;
 use crate::waf::sql_injection::SqlInjectionRule;
+use crate::waf::xss::XssRule;
 use crate::waf::{SecurityViolation, WafEngine};
 
 // Per-window-duration rate limiters (keyed by window_seconds)
@@ -226,6 +229,33 @@ impl ProxyHttp for HostSwitchProxy {
                     }
                 }
 
+                if let Some(ref xss_conf) = waf_conf.xss {
+                    if xss_conf.enabled {
+                        engine.add_rule(Box::new(XssRule {
+                            enabled: true,
+                            block_mode: xss_conf.block_mode,
+                        }));
+                    }
+                }
+
+                if let Some(ref cmd_conf) = waf_conf.command_injection {
+                    if cmd_conf.enabled {
+                        engine.add_rule(Box::new(CommandInjectionRule {
+                            enabled: true,
+                            block_mode: cmd_conf.block_mode,
+                        }));
+                    }
+                }
+
+                if let Some(ref pt_conf) = waf_conf.path_traversal {
+                    if pt_conf.enabled {
+                        engine.add_rule(Box::new(PathTraversalRule {
+                            enabled: true,
+                            block_mode: pt_conf.block_mode,
+                        }));
+                    }
+                }
+
                 // Run header-phase checks
                 let violations = engine.check_headers(session.req_header());
 
@@ -361,6 +391,33 @@ impl ProxyHttp for HostSwitchProxy {
                         engine.add_rule(Box::new(SqlInjectionRule {
                             enabled: true,
                             block_mode: sql_conf.block_mode,
+                        }));
+                    }
+                }
+
+                if let Some(ref xss_conf) = waf_conf.xss {
+                    if xss_conf.enabled {
+                        engine.add_rule(Box::new(XssRule {
+                            enabled: true,
+                            block_mode: xss_conf.block_mode,
+                        }));
+                    }
+                }
+
+                if let Some(ref cmd_conf) = waf_conf.command_injection {
+                    if cmd_conf.enabled {
+                        engine.add_rule(Box::new(CommandInjectionRule {
+                            enabled: true,
+                            block_mode: cmd_conf.block_mode,
+                        }));
+                    }
+                }
+
+                if let Some(ref pt_conf) = waf_conf.path_traversal {
+                    if pt_conf.enabled {
+                        engine.add_rule(Box::new(PathTraversalRule {
+                            enabled: true,
+                            block_mode: pt_conf.block_mode,
                         }));
                     }
                 }
